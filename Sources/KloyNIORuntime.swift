@@ -21,7 +21,7 @@ public func run(server : Server, baseUrl: URL, eventLoopGroup: EventLoopGroup = 
         .childChannelInitializer { channel in
           channel.pipeline.configureHTTPServerPipeline().flatMap {
               //Add handler
-            let handlers: [ChannelHandler] = [KloyHandler()]
+            let handlers: [ChannelHandler] = [KloyHandler(for: server)]
             return channel.pipeline.addHandlers(handlers, position: .last)
           }
         }
@@ -43,18 +43,18 @@ public func run(server : Server, baseUrl: URL, eventLoopGroup: EventLoopGroup = 
 private final class KloyHandler: ChannelInboundHandler{
     typealias InboundIn = HTTPServerRequestPart // HTTPPart<HTTPRequestHead, ByteBuffer>
     let server: Server
-    var kloyMethod: Core.HTTPMethod
-    var kloyHeaders: [Core.Header]
-    var kloyUri:String
-    var kloyHttpVersion: Core.HTTPVersion
+    var kloyMethod: Core.HTTPMethod?
+    var kloyHeaders: [Core.Header]?
+    var kloyUri:String?
+    var kloyHttpVersion: Core.HTTPVersion?
     var request: Core.Request?
     
     init(for server: Server) {
-      self.server = server
+        self.server = server
         self.kloyHeaders = []
     }
     
-    func channelRead(context: ChannelHandlerContext, data: NIOAny) async {
+    func channelRead(context: ChannelHandlerContext, data: NIOAny) async{
         let reqPart  = self.unwrapInboundIn(data)
         
         switch reqPart {
@@ -63,7 +63,7 @@ private final class KloyHandler: ChannelInboundHandler{
             let headers = header.headers.reduce(into: [:]) { $0[$1.name] = $1.value }
             headers.forEach{
                 key, value in
-                self.kloyHeaders.append(.init(name: key, value: value))
+                self.kloyHeaders?.append(.init(name: key, value: value))
             }
             //header.version.
             self.kloyUri = header.uri
@@ -75,7 +75,7 @@ private final class KloyHandler: ChannelInboundHandler{
             bytes?.forEach{
                 data.append(.init($0))
             }
-            self.request = .init(method: self.kloyMethod, headers: self.kloyHeaders, uri: self.kloyUri, version: self.kloyHttpVersion, body: .init(payload: data))
+            self.request = .init(method: self.kloyMethod!, headers: self.kloyHeaders!, uri: self.kloyUri!, version: self.kloyHttpVersion!, body: .init(payload: data))
         case .end:
             guard let req = self.request else{
                 return
@@ -85,16 +85,16 @@ private final class KloyHandler: ChannelInboundHandler{
             
             let head = HTTPResponseHead(
               version: .init(major: 1, minor: 1),
-              status: .init(statusCode: res.status.rawValue),
+              status: .init(statusCode: res.status.code),
               headers: .init(res.headers.map { ($0.name, $0.value) })
             )
             context.channel.write(HTTPServerResponsePart.head(head), promise: nil)
 
-            var buffer = context.channel.allocator.buffer(capacity: res.body.count)
-            buffer.writeBytes(res.body)
+            var buffer = context.channel.allocator.buffer(capacity: res.body.payload.count)
+            buffer.writeBytes(res.body.payload)
             context.channel.write(HTTPServerResponsePart.body(.byteBuffer(buffer)), promise: nil)
 
-            return context.channel.writeAndFlush(HTTPServerResponsePart.end(nil)).flatMap {
+            _ = context.channel.writeAndFlush(HTTPServerResponsePart.end(nil)).flatMap {
               context.channel.close()
             }
         }
@@ -106,8 +106,4 @@ private final class KloyHandler: ChannelInboundHandler{
     }
 }
 
-extension HTTPHeaders{
-    func all(){
-        self.
-    }
-}
+//
