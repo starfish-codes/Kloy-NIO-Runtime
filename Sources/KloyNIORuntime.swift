@@ -67,13 +67,12 @@ private final class KloyHandler: ChannelInboundHandler {
             self.kloyUri = header.uri
             self.kloyHttpVersion = .oneOne
         case var .body(bodyPart):
-            var data: Data = .init()
-            let bytes = bodyPart.readBytes(length: bodyPart.readableBytes)
-
-            bytes?.forEach {
-                data.append(.init($0))
+            guard let bytes = bodyPart.readBytes(length: bodyPart.readableBytes) else{
+                return
             }
-            self.kloyBody = .init(payload: data)
+            
+            self.kloyBody = .init(payload: Data(bytes: bytes, count: bytes.count))
+                
         case .end:
             guard let method = self.kloyMethod else {
                 return
@@ -115,7 +114,7 @@ private final class KloyHandler: ChannelInboundHandler {
                 context.channel.write(HTTPServerResponsePart.head(head), promise: nil)
 
                 var buffer = context.channel.allocator.buffer(capacity: res.body.payload.count)
-                buffer.writeBytes(res.body.payload)
+                 buffer.writeBytes(res.body.payload )
                 context.channel.write(HTTPServerResponsePart.body(.byteBuffer(buffer)), promise: nil)
 
                 _ = context.channel.writeAndFlush(HTTPServerResponsePart.end(nil)).flatMap {
