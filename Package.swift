@@ -25,14 +25,16 @@ let package = Package(
         // Targets can depend on other targets in this package, and on products in packages this package depends on.
         .target(
             name: "KloyNIORuntime",
+            
             dependencies: [
                 .product(name: "Core", package: "Kloy-Core"),
                 .product(name: "NIO", package: "swift-nio"),
                 .product(name: "NIOHTTP1", package: "swift-nio"),
                 .product(name: "NIOHTTPCompression", package: "swift-nio-extras"),
-            ]),
+            ], path: "Sources"),
         .testTarget(
             name: "KloyNIORuntimeTests",
-            dependencies: ["KloyNIORuntime"]),
+            dependencies: ["KloyNIORuntime"],
+            path: "Tests"),
     ]
 )
