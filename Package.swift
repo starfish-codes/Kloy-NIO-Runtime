@@ -31,6 +31,9 @@ let package = Package(
                 .product(name: "NIOHTTP1", package: "swift-nio"),
                 .product(name: "NIOHTTPCompression", package: "swift-nio-extras"),
             ], path: "Sources"),
+        .executableTarget(name: "Examples", dependencies: [
+            "KloyNIORuntime",
+        ], path: "Examples"),
         .testTarget(
             name: "KloyNIORuntimeTests",
             dependencies: ["KloyNIORuntime"],

@@ -8,7 +8,7 @@ import NIOHTTP1
 import NIOHTTPCompression
 
 @available(macOS 12.0.0, *)
-public func run(server: Server, baseUrl: URL, eventLoopGroup: EventLoopGroup = MultiThreadedEventLoopGroup(numberOfThreads: System.coreCount), port: Int = 8080) {
+public func run(server: Server, eventLoopGroup: EventLoopGroup = MultiThreadedEventLoopGroup(numberOfThreads: System.coreCount), port: Int = 8080) {
     do {
         let reuseAddrOpt = ChannelOptions.socket(SocketOptionLevel(SOL_SOCKET), SO_REUSEADDR)
         let bootstrap = ServerBootstrap(group: eventLoopGroup)
@@ -45,14 +45,14 @@ private final class KloyHandler: ChannelInboundHandler {
     var kloyHeaders: [Core.Header]?
     var kloyUri: String?
     var kloyHttpVersion: Core.HTTPVersion?
-    var request: Core.Request?
+    var kloyBody: Core.Body?
 
     init(for server: Server) {
         self.server = server
         self.kloyHeaders = []
     }
 
-    func channelRead(context: ChannelHandlerContext, data: NIOAny) async {
+    func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         let reqPart = self.unwrapInboundIn(data)
 
         switch reqPart {
@@ -73,27 +73,54 @@ private final class KloyHandler: ChannelInboundHandler {
             bytes?.forEach {
                 data.append(.init($0))
             }
-            self.request = .init(method: self.kloyMethod!, headers: self.kloyHeaders!, uri: self.kloyUri!, version: self.kloyHttpVersion!, body: .init(payload: data))
+            self.kloyBody = .init(payload: data)
         case .end:
-            guard let req = self.request else {
+            guard let method = self.kloyMethod else {
+                return
+            }
+            guard let headers = self.kloyHeaders else {
+                return
+            }
+            guard let uri = self.kloyUri else {
+                return
+            }
+            guard let kloyHttpVersion = self.kloyHttpVersion else {
                 return
             }
 
-            let res = await self.server.process(request: req)
+            var body: Core.Body
+            if self.kloyBody == nil {
+                body = .empty
+            } else {
+                body = self.kloyBody!
+            }
 
-            let head = HTTPResponseHead(
-                version: .init(major: 1, minor: 1),
-                status: .init(statusCode: res.status.code),
-                headers: .init(res.headers.map { ($0.name, $0.value) })
-            )
-            context.channel.write(HTTPServerResponsePart.head(head), promise: nil)
+            let req = Core.Request(method: method, headers: headers, uri: uri, version: kloyHttpVersion, body: body)
 
-            var buffer = context.channel.allocator.buffer(capacity: res.body.payload.count)
-            buffer.writeBytes(res.body.payload)
-            context.channel.write(HTTPServerResponsePart.body(.byteBuffer(buffer)), promise: nil)
 
-            _ = context.channel.writeAndFlush(HTTPServerResponsePart.end(nil)).flatMap {
-                context.channel.close()
+            let promise = context.eventLoop.makePromise(of: Core.Response.self)
+            promise.completeWithTask {
+                
+                return await self.server.process(request: req)
+            }
+            
+
+             promise.futureResult.whenSuccess{ res in
+                
+                let head = HTTPResponseHead(
+                    version: .init(major: 1, minor: 1),
+                    status: .init(statusCode: res.status.code),
+                    headers: .init(res.headers.map { ($0.name, $0.value) })
+                )
+                context.channel.write(HTTPServerResponsePart.head(head), promise: nil)
+
+                var buffer = context.channel.allocator.buffer(capacity: res.body.payload.count)
+                buffer.writeBytes(res.body.payload)
+                context.channel.write(HTTPServerResponsePart.body(.byteBuffer(buffer)), promise: nil)
+
+                _ = context.channel.writeAndFlush(HTTPServerResponsePart.end(nil)).flatMap {
+                    context.channel.close()
+                }
             }
         }
     }
